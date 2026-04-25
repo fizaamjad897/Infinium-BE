@@ -1,0 +1,23 @@
+# Server
+PORT=5000
+NODE_ENV=development
+
+# Supabase
+SUPABASE_URL=your_supabase_project_url
+SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+
+# JWT
+JWT_SECRET=your_super_secret_jwt_key_change_this
+JWT_EXPIRES_IN=7d
+
+# GitHub OAuth
+GITHUB_CLIENT_ID=your_github_client_id
+GITHUB_CLIENT_SECRET=your_github_client_secret
+GITHUB_CALLBACK_URL=http://localhost:5000/api/auth/github/callback
+
+# Python AI Agent
+PYTHON_AGENT_URL=http://localhost:8000
+
+# Frontend
+FRONTEND_URL=http://localhost:3000

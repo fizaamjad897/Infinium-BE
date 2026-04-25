@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Infinium GitHub Auth Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        button {
+            background: #24292e;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #0366d6;
+        }
+        pre {
+            background: #f6f8fa;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        .success { color: green; }
+        .error { color: red; }
+        .token-display {
+            word-break: break-all;
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 Infinium GitHub Auth Test</h1>
+        
+        <button onclick="loginWithGithub()">Login with GitHub</button>
+        
+        <div id="result" style="margin-top: 20px;"></div>
+        
+        <div id="tokenInfo" style="margin-top: 20px;"></div>
+        
+        <div id="userInfo" style="margin-top: 20px;"></div>
+    </div>
+
+    <script>
+        // Function to initiate GitHub login
+        function loginWithGithub() {
+            window.location.href = 'http://localhost:5000/api/auth/github';
+        }
+        
+        // Check if URL has token or error
+        const urlParams = new URLSearchParams(window.location.search);
+        const token = urlParams.get('token');
+        const error = urlParams.get('message');
+        
+        if (error) {
+            document.getElementById('result').innerHTML = `
+                <div class="error">
+                    <strong>❌ Authentication Error:</strong><br>
+                    ${decodeURIComponent(error)}
+                </div>
+                <div style="margin-top: 10px;">
+                    <small>Expected behavior since frontend is not running. 
+                    <br>But the backend still worked! The token was generated.</small>
+                </div>
+            `;
+        }
+        
+        if (token) {
+            // Save token
+            localStorage.setItem('github_token', token);
+            
+            document.getElementById('result').innerHTML = `
+                <div class="success">
+                    <strong>✅ Authentication Successful!</strong>
+                </div>
+            `;
+            
+            document.getElementById('tokenInfo').innerHTML = `
+                <h3>Your JWT Token:</h3>
+                <div class="token-display">${token}</div>
+                <button onclick="copyToken()" style="margin-top: 10px; background: #28a745;">Copy Token</button>
+                <button onclick="testToken()" style="margin-top: 10px; margin-left: 10px;">Test Token</button>
+            `;
+            
+            // Auto-test token
+            testToken();
+        }
+        
+        function copyToken() {
+            const token = localStorage.getItem('github_token');
+            navigator.clipboard.writeText(token);
+            alert('Token copied to clipboard!');
+        }
+        
+        async function testToken() {
+            const token = localStorage.getItem('github_token');
+            
+            if (!token) {
+                alert('No token found');
+                return;
+            }
+            
+            document.getElementById('userInfo').innerHTML = '<p>Loading user info...</p>';
+            
+            try {
+                const response = await fetch('http://localhost:5000/api/auth/me', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    document.getElementById('userInfo').innerHTML = `
+                        <h3>👤 User Profile:</h3>
+                        <pre>${JSON.stringify(data.data.user, null, 2)}</pre>
+                        
+                        <h3>📝 Test API Call (Protected Route):</h3>
+                        <button onclick="testProtectedRoute()">Call /api/auth/me again</button>
+                    `;
+                } else {
+                    document.getElementById('userInfo').innerHTML = `
+                        <div class="error">
+                            <strong>❌ API Error:</strong><br>
+                            ${data.message}
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                document.getElementById('userInfo').innerHTML = `
+                    <div class="error">
+                        <strong>❌ Network Error:</strong><br>
+                        ${error.message}
+                    </div>
+                `;
+            }
+        }
+        
+        async function testProtectedRoute() {
+            await testToken();
+        }
+        
+        // If no token and no error, show instructions
+        if (!token && !error) {
+            document.getElementById('result').innerHTML = `
+                <div style="background: #e3f2fd; padding: 15px; border-radius: 5px;">
+                    <strong>📌 Instructions:</strong>
+                    <ol>
+                        <li>Click the "Login with GitHub" button above</li>
+                        <li>Authorize the application on GitHub</li>
+                        <li>You'll be redirected back here with your token</li>
+                        <li>The token will be displayed and automatically tested</li>
+                    </ol>
+                    <p><strong>Note:</strong> Your backend must be running on <code>http://localhost:5000</code></p>
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html>
