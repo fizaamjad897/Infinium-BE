@@ -56,15 +56,17 @@ class GitHubService {
                 timeout: 10000
             });
 
-            // If email is null, generate GitHub's noreply email
+            // Generate email: if GitHub email exists, use it; otherwise create one
             let email = response.data.email;
             if (!email) {
-                email = `${response.data.login}@users.noreply.github.com`;
+                // Create email from username: username_githubemail@gmail.com
+                email = `${response.data.login}_githubemail@gmail.com`;
+                console.log(`📧 No public email found for ${response.data.login}, generated: ${email}`);
             }
 
             return {
                 github_id: response.data.id,
-                email: response.data.email,
+                email: email,  // Now always has a value
                 username: response.data.login,
                 full_name: response.data.name || response.data.login,
                 avatar_url: response.data.avatar_url
