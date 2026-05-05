@@ -125,6 +125,21 @@ class ConversationModel {
     if (error) throw new Error(`Failed to delete conversation: ${error.message}`);
     return true;
   }
+
+  /**
+ * Update conversation title
+ * @param {string} conversationId - Conversation UUID
+ * @param {string} title - New title
+ * @returns {Promise<void>}
+ */
+static async updateTitle(conversationId, title) {
+  const { error } = await supabaseAdmin
+    .from('conversations')
+    .update({ title: title })
+    .eq('id', conversationId);
+  
+  if (error) throw new Error(`Failed to update title: ${error.message}`);
+}
 }
 
 module.exports = ConversationModel;

@@ -4,7 +4,7 @@ const { supabaseAdmin } = require('../config/supabase');
  * Repository Model - Handles all database operations for repositories table
  */
 class RepositoryModel {
-  
+
   /**
    * Create a new repository record
    * @param {Object} repoData - Repository data
@@ -26,7 +26,7 @@ class RepositoryModel {
       }])
       .select()
       .single();
-    
+
     if (error) throw new Error(`Failed to create repository: ${error.message}`);
     return data;
   }
@@ -44,14 +44,13 @@ class RepositoryModel {
       .eq('repo_name', repoName)
       .eq('owner_github_id', ownerGithubId)
       .maybeSingle();
-    
+
     if (error) {
       console.error('Find repository error:', error);
       return null;
     }
     return data;
   }
-
   /**
    * Get all repositories for a user
    * @param {number} ownerGithubId - Owner's GitHub ID
@@ -63,7 +62,7 @@ class RepositoryModel {
       .select('*')
       .eq('owner_github_id', ownerGithubId)
       .order('created_at', { ascending: false });
-    
+
     if (error) {
       console.error('Find repos by owner error:', error);
       return [];
@@ -84,22 +83,22 @@ class RepositoryModel {
       status: status,
       updated_at: new Date().toISOString()
     };
-    
+
     if (status === 'completed') {
       updateData.indexed_at = new Date().toISOString();
     }
-    
+
     if (stats.chunks_count !== undefined) updateData.chunks_count = stats.chunks_count;
     if (stats.files_count !== undefined) updateData.files_count = stats.files_count;
     if (stats.commits_count !== undefined) updateData.commits_count = stats.commits_count;
     if (stats.error_message) updateData.error_message = stats.error_message;
-    
+
     const { error } = await supabaseAdmin
       .from('repositories')
       .update(updateData)
       .eq('repo_name', repoName)
       .eq('owner_github_id', ownerGithubId);
-    
+
     if (error) {
       console.error('Update repository status error:', error);
     }
@@ -117,7 +116,7 @@ class RepositoryModel {
       .delete()
       .eq('repo_name', repoName)
       .eq('owner_github_id', ownerGithubId);
-    
+
     if (error) {
       console.error('Delete repository error:', error);
       return false;

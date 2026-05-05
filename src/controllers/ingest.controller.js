@@ -210,7 +210,7 @@ async function getIngestionStatus(req, res) {
  * Background polling to sync status
  */
 async function startStatusPolling(repoName, ownerGithubId) {
-    const maxAttempts = 60; // 5 minutes (poll every 5 seconds)
+    const maxAttempts = 240; // 20 minutes (poll every 5 seconds)
     let attempts = 0;
 
     const pollInterval = setInterval(async () => {

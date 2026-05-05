@@ -9,6 +9,9 @@ const authRoutes = require('./routes/auth.routes');
 const repoRoutes = require('./routes/repo.routes');
 const ingestRoutes = require('./routes/ingest.routes');
 const queryRoutes = require('./routes/query.routes');
+const docsRoutes = require('./routes/docs.routes');
+const dashboardRoutes = require('./routes/dashboard.routes');
+const branchIngestRoutes = require('./routes/branchIngest.routes');
 
 const app = express();
 
@@ -57,6 +60,9 @@ app.use('/api/auth', authRoutes);
 app.use('/api/repos', repoRoutes);
 app.use('/api/ingest', ingestRoutes);
 app.use('/api', queryRoutes); 
+app.use('/api/docs', docsRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/branch-ingest', branchIngestRoutes);
 
 // 404 handler for undefined routes
 app.use((req, res) => {

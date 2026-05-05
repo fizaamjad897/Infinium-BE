@@ -17,17 +17,18 @@ class PythonAgentService {
                 'Content-Type': 'application/json'
             };
 
-            // Add GitHub token as X-GitHub-Token header (matches Python's expectation)
             if (githubToken) {
                 headers['X-GitHub-Token'] = githubToken;
             }
 
+            const requestBody = {
+                repo_url: repoUrl,
+                repo_name: repoName
+            };
+
             const response = await axios.post(
-                `${PYTHON_AGENT_URL}/api/ingest`,
-                {
-                    repo_url: repoUrl,
-                    repo_name: repoName
-                },
+                `${PYTHON_AGENT_URL}/api/ingest/repo`, //for both public and private repo ingestion (universal endpoint)
+                requestBody,
                 {
                     headers: headers,
                     timeout: 5000
@@ -90,7 +91,7 @@ class PythonAgentService {
                 query: query,
                 repo_name: repoName,
                 use_hybrid: true,
-                top_k: 5
+                top_k: 10
             };
 
             if (conversationId) {
@@ -104,7 +105,7 @@ class PythonAgentService {
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    timeout: 60000  // 60 seconds for LLM generation
+                    timeout: 180000  // 60 seconds for LLM generation
                 }
             );
 
@@ -137,6 +138,97 @@ class PythonAgentService {
         } catch (error) {
             console.error('Python agent start conversation error:', error.message);
             throw new Error(`Failed to start conversation: ${error.response?.data?.detail || error.message}`);
+        }
+    }
+
+    /**
+ * Start ingestion of all branches for a repository
+ * @param {string} repoUrl - GitHub clone URL
+ * @param {string} repoName - Repository name
+ * @param {string} githubToken - GitHub access token
+ * @returns {Promise<Object>} - Ingestion response
+ */
+    static async startBranchIngestion(repoUrl, repoName, githubToken = null) {
+        try {
+            const headers = {
+                'Content-Type': 'application/json'
+            };
+
+            if (githubToken) {
+                headers['X-GitHub-Token'] = githubToken;
+            }
+
+            const requestBody = {
+                repo_url: repoUrl,
+                repo_name: repoName
+            };
+
+            const response = await axios.post(
+                `${PYTHON_AGENT_URL}/api/ingest/branches`,
+                requestBody,
+                {
+                    headers: headers,
+                    timeout: 900000
+                }
+            );
+
+            return response.data;
+        } catch (error) {
+            console.error('Python agent branch ingestion error:', error.message);
+            throw new Error(`Failed to start branch ingestion: ${error.response?.data?.detail || error.message}`);
+        }
+    }
+
+    /**
+     * Get branch ingestion status from Python agent
+     * @param {string} repoName - Repository name
+     * @returns {Promise<Object>} - Status object
+     */
+    static async getBranchIngestionStatus(repoName) {
+        try {
+            const response = await axios.get(
+                `${PYTHON_AGENT_URL}/api/repos/${repoName}/status?scope=branches`,
+                { timeout: 10000 }
+            );
+            return response.data;
+        } catch (error) {
+            console.error('Get branch ingestion status error:', error.message);
+            return { status: 'unknown', error: error.message };
+        }
+    }
+
+    /**
+ * Ask a question across multiple or all repositories
+ * @param {string} query - User's question
+ * @param {Array} repoNames - Optional list of repo names (null = all repos)
+ * @returns {Promise<Object>} - Answer with sources
+ */
+    static async queryAllRepos(query, repoNames = null) {
+        try {
+            const requestBody = {
+                query: query
+            };
+
+            // Only add repo_names if provided
+            if (repoNames && repoNames.length > 0) {
+                requestBody.repo_names = repoNames;
+            }
+
+            const response = await axios.post(
+                `${PYTHON_AGENT_URL}/api/query/all`,
+                requestBody,
+                {
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: 180000  // 3 minutes
+                }
+            );
+
+            return response.data;
+        } catch (error) {
+            console.error('Python agent query all error:', error.message);
+            throw new Error(`Failed to get answer: ${error.response?.data?.detail || error.message}`);
         }
     }
 }

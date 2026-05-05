@@ -6,7 +6,8 @@ const {
   startConversation,
   getConversations,
   getConversation,
-  deleteConversation
+  deleteConversation,
+  askAllRepos,
 } = require('../controllers/query.controller');
 
 // All routes require authentication
@@ -14,6 +15,9 @@ router.use(authMiddleware);
 
 // Query endpoints
 router.post('/query', askQuestion);
+
+// New endpoint to ask all repositories
+router.post('/query/all', askAllRepos);
 
 // Conversation endpoints
 router.post('/conversation', startConversation);
