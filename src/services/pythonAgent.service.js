@@ -79,19 +79,41 @@ class PythonAgentService {
     }
 
     /**
+     * Ask a question about a repo and get a streaming response
+     */
+    static async streamQueryRepo(repoName, query, conversationId = null, branchFilter = null) {
+        try {
+            const response = await axios.post(`${PYTHON_AGENT_URL}/api/query`, {
+                repo_name: repoName,
+                query: query,
+                conversation_id: conversationId,
+                branch_filter: branchFilter,
+                stream: true
+            }, {
+                responseType: 'stream'
+            });
+            return response.data;
+        } catch (error) {
+            console.error('Python Agent streaming query error:', error.message);
+            throw new Error(`Agent reasoning failed: ${error.message}`);
+        }
+    }
+
+    /**
    * Ask a question about a specific repository
    * @param {string} repoName - Repository name
    * @param {string} query - User's question
    * @param {string} conversationId - Optional conversation ID for context
    * @returns {Promise<Object>} - Answer with sources
    */
-    static async queryRepo(repoName, query, conversationId = null) {
+    static async queryRepo(repoName, query, conversationId = null, branchFilter = null) {
         try {
             const requestBody = {
                 query: query,
                 repo_name: repoName,
                 use_hybrid: true,
-                top_k: 10
+                top_k: 10,
+                branch_filter: branchFilter
             };
 
             if (conversationId) {

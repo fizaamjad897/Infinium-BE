@@ -122,15 +122,13 @@ async function getBranchIngestionStatus(req, res) {
         const { repoName } = req.params;
         const userId = req.userId;
 
-        const user = await UserModel.findById(userId);
-        if (!user) {
+        const fullUser = await UserModel.findById(userId);
+        if (!fullUser) {
             return res.status(404).json({
                 success: false,
                 message: 'User not found'
             });
         }
-
-        const fullUser = await UserModel.findByEmail(user.email);
         const branchIndex = await BranchIndexModel.findByRepoName(repoName, fullUser.github_id);
 
         if (!branchIndex) {
@@ -144,7 +142,7 @@ async function getBranchIngestionStatus(req, res) {
         if (branchIndex.status === 'indexing') {
             pythonStatus = await PythonAgentService.getBranchIngestionStatus(repoName);
             
-            if (pythonStatus.status === 'complete') {
+            if (pythonStatus.status === 'completed' || pythonStatus.status === 'complete') {
                 await BranchIndexModel.updateStatus(repoName, fullUser.github_id, 'completed', {
                     chunks_count: pythonStatus.chunks_stored || 0,
                     files_count: pythonStatus.files_processed || 0,
@@ -198,7 +196,7 @@ async function startBranchPolling(repoName, userGithubId) {
         try {
             const pythonStatus = await PythonAgentService.getBranchIngestionStatus(repoName);
             
-            if (pythonStatus.status === 'complete') {
+            if (pythonStatus.status === 'completed' || pythonStatus.status === 'complete') {
                 await BranchIndexModel.updateStatus(repoName, userGithubId, 'completed', {
                     chunks_count: pythonStatus.chunks_stored || 0,
                     files_count: pythonStatus.files_processed || 0,
