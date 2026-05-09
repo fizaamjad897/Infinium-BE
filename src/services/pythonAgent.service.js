@@ -47,6 +47,33 @@ class PythonAgentService {
      * @param {string} repoName - Repository name
      * @returns {Promise<Object>} - Status object
      */
+    /**
+     * Delete a repository from the Python agent (wipes ChromaDB collection
+     * and removes ingestion status entry).
+     * @param {string} repoName - Repository name
+     * @param {string} githubToken - GitHub access token (for auth bypass header)
+     * @returns {Promise<Object>}
+     */
+    static async deleteRepo(repoName, githubToken = null) {
+        try {
+            const headers = {};
+            if (githubToken) headers['X-GitHub-Token'] = githubToken;
+
+            const response = await axios.delete(
+                `${PYTHON_AGENT_URL}/api/repos/${encodeURIComponent(repoName)}`,
+                { headers, timeout: 15000 }
+            );
+            return response.data;
+        } catch (error) {
+            // 404 means it was already gone — treat as success.
+            if (error.response?.status === 404) {
+                return { status: 'not_found', repo_name: repoName };
+            }
+            console.error('Python agent delete error:', error.message);
+            throw new Error(`Failed to delete repo from Python agent: ${error.response?.data?.detail || error.message}`);
+        }
+    }
+
     static async getIngestionStatus(repoName) {
         try {
             const response = await axios.get(
@@ -56,7 +83,12 @@ class PythonAgentService {
 
             return response.data;
         } catch (error) {
-            console.error('Get ingestion status error:', error.message);
+            // Transient socket resets / timeouts during heavy ingestion are
+            // expected — the poller retries on the next tick. Don't spam logs.
+            const transient = ['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED', 'EPIPE'];
+            if (!transient.includes(error.code)) {
+                console.error('Get ingestion status error:', error.message);
+            }
             return {
                 status: 'unknown',
                 error: error.message
@@ -214,7 +246,12 @@ class PythonAgentService {
             );
             return response.data;
         } catch (error) {
-            console.error('Get branch ingestion status error:', error.message);
+            // ECONNRESET / ETIMEDOUT during heavy ingestion are transient — the
+            // poller will retry on the next tick. Don't spam the log for these.
+            const transient = ['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED', 'EPIPE'];
+            if (!transient.includes(error.code)) {
+                console.error('Get branch ingestion status error:', error.message);
+            }
             return { status: 'unknown', error: error.message };
         }
     }

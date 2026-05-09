@@ -1,6 +1,7 @@
 const GitHubService = require('../services/github.service');
 const RepositoryModel = require('../models/repository.model');
 const UserModel = require('../models/user.model');
+const PythonAgentService = require('../services/pythonAgent.service');
 
 /**
  * Get all repositories for authenticated user (from GitHub API + local status)
@@ -224,18 +225,23 @@ async function deleteRepo(req, res) {
     }
 
     const fullUser = await UserModel.findByEmail(user.email);
-    const deleted = await RepositoryModel.delete(repoName, fullUser.github_id);
+    const BranchIndexModel = require('../models/branchIndex.model');
 
-    if (!deleted) {
-      return res.status(404).json({
-        success: false,
-        message: 'Repository not found'
-      });
+    // 1. Wipe ChromaDB collection + Python ingestion-status entry.
+    //    Run this first so a partial failure doesn't leave orphaned vectors.
+    try {
+      await PythonAgentService.deleteRepo(repoName, fullUser?.github_access_token);
+    } catch (e) {
+      console.warn(`⚠️ Python agent delete failed for ${repoName} — continuing with DB cleanup:`, e.message);
     }
+
+    // 2. Delete from both standard and branch indices in our DB
+    await RepositoryModel.delete(repoName, fullUser.github_id);
+    await BranchIndexModel.delete(repoName, fullUser.github_id);
 
     res.json({
       success: true,
-      message: 'Repository removed from index'
+      message: 'Repository removed from index (ChromaDB + DB)'
     });
   } catch (error) {
     console.error('Delete repo error:', error);
