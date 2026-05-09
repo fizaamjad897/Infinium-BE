@@ -52,6 +52,8 @@ async function askQuestion(req, res) {
     if (isStream) {
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
       res.setHeader('Transfer-Encoding', 'chunked');
+      res.setHeader('X-Accel-Buffering', 'no');
+      res.setHeader('Cache-Control', 'no-cache');
 
       const stream = await PythonAgentService.streamQueryRepo(
         repo_name,
@@ -65,7 +67,7 @@ async function askQuestion(req, res) {
 
       stream.on('data', (chunk) => {
         const text = chunk.toString();
-        
+
         if (text.trim().startsWith('{') || jsonBuffer) {
           jsonBuffer += text;
           try {
