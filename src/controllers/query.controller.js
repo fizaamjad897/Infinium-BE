@@ -66,7 +66,6 @@ async function askQuestion(req, res) {
       stream.on('data', (chunk) => {
         const text = chunk.toString();
         
-        // If it looks like JSON or we are already buffering
         if (text.trim().startsWith('{') || jsonBuffer) {
           jsonBuffer += text;
           try {
@@ -78,7 +77,6 @@ async function askQuestion(req, res) {
               jsonBuffer = "";
             }
           } catch (e) {
-            // Partial JSON, try regex extraction
             const match = jsonBuffer.match(/"answer"\s*:\s*"((?:[^"\\]|\\.)*)"/);
             if (match && match[1]) {
               try {
@@ -88,7 +86,7 @@ async function askQuestion(req, res) {
                   fullAnswer += newPart;
                   res.write(newPart);
                 }
-              } catch(err) {}
+              } catch (err) { }
             }
           }
         } else {
@@ -98,9 +96,15 @@ async function askQuestion(req, res) {
       });
 
       stream.on('end', async () => {
-        // Post-process: Store in DB after stream ends
         if (localConversationId) {
           try {
+            // Check if first message to generate title
+            const existingMessages = await ConversationModel.getMessages(localConversationId);
+            if (existingMessages.length === 0) {
+              const GroqService = require('../services/groq.service');
+              const generatedTitle = await GroqService.generateTitle(query);
+              await ConversationModel.updateTitle(localConversationId, generatedTitle);
+            }
             await ConversationModel.addMessage(localConversationId, 'user', query, null, null, null);
             await ConversationModel.addMessage(localConversationId, 'assistant', fullAnswer, [], 'ollama-streaming', 0);
           } catch (e) {
@@ -130,19 +134,23 @@ async function askQuestion(req, res) {
     // Store in DB
     if (localConversationId) {
       const existingMessages = await ConversationModel.getMessages(localConversationId);
-      if (existingMessages.length === 0) {
+      const isFirstMessage = existingMessages.length === 0;
+
+      // If first message, generate title using Groq (ONLY ONCE)
+      if (isFirstMessage) {
         const GroqService = require('../services/groq.service');
         const generatedTitle = await GroqService.generateTitle(query);
         await ConversationModel.updateTitle(localConversationId, generatedTitle);
+        console.log(`📝 Generated title for conversation ${localConversationId}: ${generatedTitle}`);
       }
 
       await ConversationModel.addMessage(localConversationId, 'user', query, null, null, null);
       await ConversationModel.addMessage(
-        localConversationId, 
-        'assistant', 
-        pythonResponse.answer, 
-        pythonResponse.sources || [], 
-        pythonResponse.model, 
+        localConversationId,
+        'assistant',
+        pythonResponse.answer,
+        pythonResponse.sources || [],
+        pythonResponse.model,
         pythonResponse.tokens_used
       );
     }
