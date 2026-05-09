@@ -120,7 +120,7 @@ class UserModel {
   static async findById(id) {
     const { data, error } = await supabaseAdmin
       .from('users')
-      .select('id, email, username, full_name, avatar_url, auth_provider, created_at, last_login_at')
+      .select('id, email, username, full_name, avatar_url, auth_provider, github_id, github_access_token, created_at, last_login_at')
       .eq('id', id)
       .maybeSingle();
     

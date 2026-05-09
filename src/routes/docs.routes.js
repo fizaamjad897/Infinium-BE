@@ -5,6 +5,7 @@ const {
     generateDocumentation, 
     getUserDocs, 
     getDocumentationById,
+    listDocumentation,
     deleteDocumentation 
 } = require('../controllers/docs.controller');
 
@@ -16,6 +17,9 @@ router.post('/generate', generateDocumentation);
 
 // Get all user documentation
 router.get('/', getUserDocs);
+
+// Get documentation for a specific repo
+router.get('/list/:repoName', listDocumentation);
 
 // Get specific documentation by ID
 router.get('/:id', getDocumentationById);

@@ -26,12 +26,46 @@ async function getDashboardStats(req, res) {
         const userGithubId = fullUser.github_id;
 
         // ========== 1. REPOSITORY STATS ==========
-        const { data: repos, error: reposError } = await supabaseAdmin
+        // Get standard repos
+        const { data: standardRepos, error: reposError } = await supabaseAdmin
             .from('repositories')
-            .select('status, language, chunks_count, files_count, commits_count, created_at')
+            .select('repo_name, status, language, chunks_count, files_count, commits_count, created_at')
             .eq('owner_github_id', userGithubId);
 
         if (reposError) throw reposError;
+
+        // Get branch indices (Deep Indexing)
+        const { data: branchRepos, error: branchError } = await supabaseAdmin
+            .from('branch_indexes')
+            .select('repo_name, status, language, chunks_count, files_count, commits_count, created_at')
+            .eq('user_github_id', userGithubId);
+
+        if (branchError) throw branchError;
+
+        // Merge repositories, favoring branch indices for stats if they exist
+        const mergedReposMap = new Map();
+        
+        standardRepos.forEach(r => {
+            mergedReposMap.set(r.repo_name, r);
+        });
+        
+        branchRepos.forEach(r => {
+            // If it exists in both, merge stats
+            if (mergedReposMap.has(r.repo_name)) {
+                const existing = mergedReposMap.get(r.repo_name);
+                mergedReposMap.set(r.repo_name, {
+                    ...existing,
+                    chunks_count: Math.max(existing.chunks_count || 0, r.chunks_count || 0),
+                    files_count: Math.max(existing.files_count || 0, r.files_count || 0),
+                    commits_count: Math.max(existing.commits_count || 0, r.commits_count || 0),
+                    status: r.status === 'completed' ? 'completed' : existing.status
+                });
+            } else {
+                mergedReposMap.set(r.repo_name, r);
+            }
+        });
+
+        const repos = Array.from(mergedReposMap.values());
 
         const repoStats = {
             total: repos.length,
@@ -149,6 +183,10 @@ async function getDashboardStats(req, res) {
         res.json({
             success: true,
             data: {
+                repositories_indexed: repoStats.completed,
+                total_queries: queryStats.total_questions,
+                avg_accuracy_score: 85, // Default for now
+                total_chunks: repoStats.total_chunks,
                 repository_stats: repoStats,
                 query_stats: queryStats,
                 conversation_stats: conversationStats,
