@@ -5,7 +5,9 @@ const {
   getUserRepos,
   getIndexedRepos,
   getRepoStatus,
-  deleteRepo
+  deleteRepo,
+  getRepoTree,
+  getRepoFile
 } = require('../controllers/repo.controller');
 
 // All routes require authentication
@@ -22,5 +24,11 @@ router.get('/:repoName/status', getRepoStatus);
 
 // Delete indexed repo
 router.delete('/:repoName', deleteRepo);
+
+// File tree (with functions per file) for the Code Refactor UI
+router.get('/:repoName/tree', getRepoTree);
+
+// Single file content + symbols for the Code Refactor viewer
+router.get('/:repoName/file', getRepoFile);
 
 module.exports = router;
