@@ -320,6 +320,112 @@ static async getBranchIngestionStatus(repoName) {
             throw new Error(`Failed to get answer: ${error.response?.data?.detail || error.message}`);
         }
     }
+    /**
+     * Get the file tree for a cloned repo, with functions/classes per file.
+     * @param {string} repoName
+     * @param {boolean} includeSymbols
+     */
+    static async getRepoTree(repoName, includeSymbols = true) {
+        try {
+            const response = await axios.get(
+                `${PYTHON_AGENT_URL}/api/repos/${encodeURIComponent(repoName)}/tree`,
+                { params: { include_symbols: includeSymbols }, timeout: 60000 }
+            );
+            return response.data;
+        } catch (error) {
+            console.error('Python agent tree error:', error.message);
+            throw new Error(`Failed to fetch tree: ${error.response?.data?.detail || error.message}`);
+        }
+    }
+
+    /**
+     * Get raw file content + symbols.
+     */
+    static async getRepoFile(repoName, path) {
+        try {
+            const response = await axios.get(
+                `${PYTHON_AGENT_URL}/api/repos/${encodeURIComponent(repoName)}/file`,
+                { params: { path }, timeout: 30000 }
+            );
+            return response.data;
+        } catch (error) {
+            console.error('Python agent file fetch error:', error.message);
+            throw new Error(`Failed to fetch file: ${error.response?.data?.detail || error.message}`);
+        }
+    }
+
+    /**
+     * Trigger a granular code refactor on the Python agent.
+     * @param {Object} payload - { repo_name, granularity, target, instruction, model? }
+     * @returns {Promise<Object>}
+     */
+    static async refactor(payload) {
+        try {
+            const response = await axios.post(
+                `${PYTHON_AGENT_URL}/api/code/refactor`,
+                payload,
+                {
+                    headers: { 'Content-Type': 'application/json' },
+                    timeout: 180000  // refactor with reasoning model can take a while
+                }
+            );
+            return response.data;
+        } catch (error) {
+            console.error('Python agent refactor error:', error.message);
+            throw new Error(`Failed to refactor: ${error.response?.data?.detail || error.message}`);
+        }
+    }
+
+    /**
+     * Submit feedback on any AI surface (query / refactor / explain / …).
+     * @param {Object} payload - see Python /api/feedback FeedbackRequest schema
+     * @returns {Promise<Object>}
+     */
+    static async submitFeedback(payload) {
+        try {
+            const response = await axios.post(
+                `${PYTHON_AGENT_URL}/api/feedback`,
+                payload,
+                {
+                    headers: { 'Content-Type': 'application/json' },
+                    timeout: 10000
+                }
+            );
+            return response.data;
+        } catch (error) {
+            console.error('Python agent feedback error:', error.message);
+            throw new Error(`Failed to save feedback: ${error.response?.data?.detail || error.message}`);
+        }
+    }
+
+    static async getFeedbackStats(targetType = null) {
+        try {
+            const url = `${PYTHON_AGENT_URL}/api/feedback/stats` +
+                        (targetType ? `?target_type=${encodeURIComponent(targetType)}` : '');
+            const response = await axios.get(url, { timeout: 10000 });
+            return response.data;
+        } catch (error) {
+            console.error('Python agent feedback stats error:', error.message);
+            return { total: 0, average_rating: 0, breakdown: {}, by_target: {} };
+        }
+    }
+
+    static async listFeedback({ limit = 50, targetType = null, repoName = null } = {}) {
+        try {
+            const params = new URLSearchParams();
+            params.set('limit', String(limit));
+            if (targetType) params.set('target_type', targetType);
+            if (repoName) params.set('repo_name', repoName);
+            const response = await axios.get(
+                `${PYTHON_AGENT_URL}/api/feedback?${params.toString()}`,
+                { timeout: 10000 }
+            );
+            return response.data;
+        } catch (error) {
+            console.error('Python agent feedback list error:', error.message);
+            return [];
+        }
+    }
 }
 
 module.exports = PythonAgentService;
