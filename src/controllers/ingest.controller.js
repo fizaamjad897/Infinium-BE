@@ -163,8 +163,9 @@ async function getIngestionStatus(req, res) {
         if (repo.status === 'indexing') {
             pythonStatus = await PythonAgentService.getIngestionStatus(repoName);
 
-            // Sync status if Python shows completed
-            if (pythonStatus.status === 'complete') {
+            // Sync status if Python shows completed.
+            // Python emits 'completed' (with the d). Accept 'complete' too for safety.
+            if (pythonStatus.status === 'completed' || pythonStatus.status === 'complete') {
                 await RepositoryModel.updateStatus(repoName, fullUser.github_id, 'completed', {
                     chunks_count: pythonStatus.chunks_stored || 0,
                     files_count: pythonStatus.files_processed || 0,
@@ -219,7 +220,7 @@ async function startStatusPolling(repoName, ownerGithubId) {
         try {
             const pythonStatus = await PythonAgentService.getIngestionStatus(repoName);
 
-            if (pythonStatus.status === 'complete') {
+            if (pythonStatus.status === 'completed' || pythonStatus.status === 'complete') {
                 await RepositoryModel.updateStatus(repoName, ownerGithubId, 'completed', {
                     chunks_count: pythonStatus.chunks_stored || 0,
                     files_count: pythonStatus.files_processed || 0,
