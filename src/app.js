@@ -12,6 +12,8 @@ const queryRoutes = require('./routes/query.routes');
 const docsRoutes = require('./routes/docs.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
 const branchIngestRoutes = require('./routes/branchIngest.routes');
+const codeRoutes = require('./routes/code.routes');
+const feedbackRoutes = require('./routes/feedback.routes');
 const pdfRoutes = require('./routes/pdf.routes');
 const diagramRoutes = require('./routes/diagram.routes');
 
@@ -81,6 +83,8 @@ app.use('/api', queryRoutes);
 app.use('/api/docs', docsRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/branch-ingest', branchIngestRoutes);
+app.use('/api/code', codeRoutes);
+app.use('/api/feedback', feedbackRoutes);
 app.use('/api/pdf', pdfRoutes);
 app.use('/api/diagram', diagramRoutes);
 

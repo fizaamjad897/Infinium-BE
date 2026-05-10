@@ -321,9 +321,44 @@ async function deleteRepo(req, res) {
   }
 }
 
+/**
+ * GET /api/repos/:repoName/tree?include_symbols=true
+ */
+async function getRepoTree(req, res) {
+  try {
+    const { repoName } = req.params;
+    const includeSymbols = req.query.include_symbols !== 'false';
+    const data = await PythonAgentService.getRepoTree(repoName, includeSymbols);
+    return res.json({ success: true, data });
+  } catch (error) {
+    console.error('Get repo tree error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+/**
+ * GET /api/repos/:repoName/file?path=<rel/path>
+ */
+async function getRepoFile(req, res) {
+  try {
+    const { repoName } = req.params;
+    const { path } = req.query;
+    if (!path) {
+      return res.status(400).json({ success: false, message: 'path query param is required' });
+    }
+    const data = await PythonAgentService.getRepoFile(repoName, path);
+    return res.json({ success: true, data });
+  } catch (error) {
+    console.error('Get repo file error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
 module.exports = {
   getUserRepos,
   getIndexedRepos,
   getRepoStatus,
-  deleteRepo
+  deleteRepo,
+  getRepoTree,
+  getRepoFile
 };
