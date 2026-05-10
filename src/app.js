@@ -28,8 +28,8 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
-// Apply rate limiting to all routes
-app.use(limiter);
+// // Apply rate limiting to all routes
+// app.use(limiter);
 
 // Security middleware
 app.use(helmet());
