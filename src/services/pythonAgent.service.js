@@ -325,11 +325,15 @@ static async getBranchIngestionStatus(repoName) {
      * @param {string} repoName
      * @param {boolean} includeSymbols
      */
-    static async getRepoTree(repoName, includeSymbols = true) {
+    static async getRepoTree(repoName, includeSymbols = true, repoUrl = null) {
         try {
+            const params = { include_symbols: includeSymbols };
+            if (repoUrl) params.repo_url = repoUrl;
+            // Auto-clone on first request can take 5-60s for a fresh repo, so
+            // give axios room to wait.
             const response = await axios.get(
                 `${PYTHON_AGENT_URL}/api/repos/${encodeURIComponent(repoName)}/tree`,
-                { params: { include_symbols: includeSymbols }, timeout: 60000 }
+                { params, timeout: 120000 }
             );
             return response.data;
         } catch (error) {
@@ -341,11 +345,13 @@ static async getBranchIngestionStatus(repoName) {
     /**
      * Get raw file content + symbols.
      */
-    static async getRepoFile(repoName, path) {
+    static async getRepoFile(repoName, path, repoUrl = null) {
         try {
+            const params = { path };
+            if (repoUrl) params.repo_url = repoUrl;
             const response = await axios.get(
                 `${PYTHON_AGENT_URL}/api/repos/${encodeURIComponent(repoName)}/file`,
-                { params: { path }, timeout: 30000 }
+                { params, timeout: 60000 }
             );
             return response.data;
         } catch (error) {
@@ -407,6 +413,26 @@ static async getBranchIngestionStatus(repoName) {
         } catch (error) {
             console.error('Python agent feedback stats error:', error.message);
             return { total: 0, average_rating: 0, breakdown: {}, by_target: {} };
+        }
+    }
+
+    /**
+     * Fetch aggregated user-perceived-accuracy metrics over a rolling window.
+     */
+    static async getFeedbackMetrics({ days = 30, targetType = null, repoName = null } = {}) {
+        try {
+            const params = new URLSearchParams();
+            params.set('days', String(days));
+            if (targetType) params.set('target_type', targetType);
+            if (repoName) params.set('repo_name', repoName);
+            const response = await axios.get(
+                `${PYTHON_AGENT_URL}/api/feedback/metrics?${params.toString()}`,
+                { timeout: 15000 }
+            );
+            return response.data;
+        } catch (error) {
+            console.error('Python agent feedback metrics error:', error.message);
+            return null;
         }
     }
 

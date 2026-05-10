@@ -5,6 +5,7 @@ const {
   submitFeedback,
   feedbackStats,
   listFeedback,
+  feedbackMetrics,
 } = require('../controllers/feedback.controller');
 
 router.use(authMiddleware);
@@ -14,6 +15,7 @@ router.use(authMiddleware);
 // GET  /api/feedback        — list recent (optional ?target_type=&repo_name=&limit=)
 router.post('/', submitFeedback);
 router.get('/stats', feedbackStats);
+router.get('/metrics', feedbackMetrics);
 router.get('/', listFeedback);
 
 module.exports = router;
