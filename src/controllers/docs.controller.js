@@ -128,7 +128,7 @@ Format as professional Markdown with proper headings (#, ##, ###), lists, code b
                         .select('id')
                         .eq('repo_name', repo_name)
                         .eq('doc_type', doc_type)
-                        .eq('user_github_id', fullUser.github_id)
+                        .eq('user_id', user.id)
                         .maybeSingle();
 
                     if (existingDoc) {
@@ -141,7 +141,7 @@ Format as professional Markdown with proper headings (#, ##, ###), lists, code b
                             repo_name,
                             doc_type,
                             content: fullAnswer,
-                            user_github_id: fullUser.github_id,
+                            user_id: user.id,
                             updated_at: new Date().toISOString()
                         });
                     }
@@ -174,7 +174,7 @@ Format as professional Markdown with proper headings (#, ##, ###), lists, code b
             .select('id')
             .eq('repo_name', repo_name)
             .eq('doc_type', doc_type)
-            .eq('user_github_id', fullUser.github_id)
+            .eq('user_id', user.id)
             .maybeSingle();
 
         let result;
@@ -201,7 +201,7 @@ Format as professional Markdown with proper headings (#, ##, ###), lists, code b
             const { data, error } = await supabaseAdmin
                 .from('documentation')
                 .insert([{
-                    user_github_id: fullUser.github_id,
+                    user_id: user.id,
                     repo_name: repo_name,
                     doc_type: doc_type,
                     content: response.answer,
@@ -266,7 +266,7 @@ async function getUserDocs(req, res) {
         const { data: docs, error } = await supabaseAdmin
             .from('documentation')
             .select('*')
-            .eq('user_github_id', fullUser.github_id)
+            .eq('user_id', user.id)
             .order('updated_at', { ascending: false });
         
         if (error) throw error;
@@ -328,7 +328,7 @@ async function getDocumentationById(req, res) {
             .from('documentation')
             .select('*')
             .eq('id', id)
-            .eq('user_github_id', fullUser.github_id)
+            .eq('user_id', user.id)
             .single();
         
         if (error || !doc) {
@@ -388,7 +388,7 @@ async function listDocumentation(req, res) {
             .from('documentation')
             .select('*')
             .ilike('repo_name', repoName)
-            .eq('user_github_id', fullUser.github_id)
+            .eq('user_id', user.id)
             .order('updated_at', { ascending: false });
         
         if (error) throw error;
@@ -449,7 +449,7 @@ async function deleteDocumentation(req, res) {
             .from('documentation')
             .delete()
             .eq('id', id)
-            .eq('user_github_id', fullUser.github_id);
+            .eq('user_id', user.id);
         
         if (error) throw error;
         

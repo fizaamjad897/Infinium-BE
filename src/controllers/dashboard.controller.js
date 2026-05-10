@@ -23,14 +23,13 @@ async function getDashboardStats(req, res) {
         }
 
         const fullUser = await UserModel.findByEmail(user.email);
-        const userGithubId = fullUser.github_id;
 
         // ========== 1. REPOSITORY STATS ==========
         // Get standard repos
         const { data: standardRepos, error: reposError } = await supabaseAdmin
             .from('repositories')
             .select('repo_name, status, language, chunks_count, files_count, commits_count, created_at')
-            .eq('owner_github_id', userGithubId);
+            .eq('user_id', userId);
 
         if (reposError) throw reposError;
 
@@ -38,7 +37,7 @@ async function getDashboardStats(req, res) {
         const { data: branchRepos, error: branchError } = await supabaseAdmin
             .from('branch_indexes')
             .select('repo_name, status, language, chunks_count, files_count, commits_count, created_at')
-            .eq('user_github_id', userGithubId);
+            .eq('user_id', userId);
 
         if (branchError) throw branchError;
 
@@ -88,9 +87,9 @@ async function getDashboardStats(req, res) {
                 tokens_used,
                 model_used,
                 conversation_id,
-                conversations!inner (repo_name, user_github_id)
+                conversations!inner (repo_name, user_id)
             `)
-            .eq('conversations.user_github_id', userGithubId)
+            .eq('conversations.user_id', userId)
             .eq('role', 'assistant');
 
         if (messagesError) throw messagesError;
@@ -98,8 +97,8 @@ async function getDashboardStats(req, res) {
         // Get user questions (for question count)
         const { data: userQuestions, error: questionsError } = await supabaseAdmin
             .from('conversation_messages')
-            .select('created_at, conversation_id, conversations!inner (repo_name, user_github_id)')
-            .eq('conversations.user_github_id', userGithubId)
+            .select('created_at, conversation_id, conversations!inner (repo_name, user_id)')
+            .eq('conversations.user_id', userId)
             .eq('role', 'user');
 
         if (questionsError) throw questionsError;
@@ -122,7 +121,7 @@ async function getDashboardStats(req, res) {
         const { data: conversations, error: convError } = await supabaseAdmin
             .from('conversations')
             .select('id, repo_name, created_at, updated_at, conversation_messages(id)')
-            .eq('user_github_id', userGithubId);
+            .eq('user_id', userId);
 
         if (convError) throw convError;
 
@@ -138,7 +137,7 @@ async function getDashboardStats(req, res) {
         const { data: docs, error: docsError } = await supabaseAdmin
             .from('documentation')
             .select('doc_type, created_at, repo_name')
-            .eq('user_github_id', userGithubId);
+            .eq('user_id', userId);
 
         if (docsError) throw docsError;
 
@@ -150,7 +149,7 @@ async function getDashboardStats(req, res) {
         };
 
         // ========== 5. RECENT ACTIVITY ==========
-        const recentQueries = await getRecentQueries(userGithubId);
+        const recentQueries = await getRecentQueries(userId);
         const recentDocs = docs?.slice(0, 3).map(d => ({
             repo_name: d.repo_name,
             doc_type: d.doc_type,
@@ -163,7 +162,7 @@ async function getDashboardStats(req, res) {
 
         // ========== 6. PERFORMANCE METRICS ==========
         const performanceStats = {
-            avg_response_time_ms: await getAvgResponseTime(userGithubId),
+            avg_response_time_ms: await getAvgResponseTime(userId),
             success_rate: calculateSuccessRate(messages),
             total_tokens_used: messages?.reduce((sum, m) => sum + (m.tokens_used || 0), 0) || 0
         };
@@ -291,7 +290,7 @@ function getDocTypeBreakdown(docs) {
     return Array.from(typeMap.entries()).map(([type, count]) => ({ type, count }));
 }
 
-async function getRecentQueries(userGithubId) {
+async function getRecentQueries(userId) {
     const { data, error } = await supabaseAdmin
         .from('conversation_messages')
         .select(`
@@ -299,7 +298,7 @@ async function getRecentQueries(userGithubId) {
             created_at,
             conversations!inner (repo_name)
         `)
-        .eq('conversations.user_github_id', userGithubId)
+        .eq('conversations.user_id', userId)
         .eq('role', 'user')
         .order('created_at', { ascending: false })
         .limit(5);
@@ -312,12 +311,12 @@ async function getRecentQueries(userGithubId) {
     }));
 }
 
-async function getAvgResponseTime(userGithubId) {
+async function getAvgResponseTime(userId) {
     // Get timestamps of user message and assistant response
     const { data, error } = await supabaseAdmin
         .from('conversation_messages')
         .select('created_at, conversation_id, role')
-        .eq('conversations.user_github_id', userGithubId)
+        .eq('conversations.user_id', userId)
         .order('created_at', { ascending: true });
 
     if (error || !data) return null;

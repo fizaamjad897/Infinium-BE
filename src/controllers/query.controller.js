@@ -37,7 +37,7 @@ async function askQuestion(req, res) {
     let localConversationId = null;
 
     if (conversation_id) {
-      const conversation = await ConversationModel.findById(conversation_id, fullUser.github_id);
+      const conversation = await ConversationModel.findById(conversation_id, user.id);
       if (!conversation) {
         return res.status(404).json({
           success: false,
@@ -196,7 +196,7 @@ async function startConversation(req, res) {
 
     const fullUser = await UserModel.findByEmail(user.email);
     const pythonConversationId = await PythonAgentService.startConversation(repo_name);
-    const conversation = await ConversationModel.create(fullUser.github_id, repo_name, null);
+    const conversation = await ConversationModel.create(user.id, repo_name, null);
 
     res.json({
       success: true,
@@ -219,7 +219,7 @@ async function getConversations(req, res) {
     const user = await UserModel.findById(userId);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
     const fullUser = await UserModel.findByEmail(user.email);
-    const conversations = await ConversationModel.findByUser(fullUser.github_id);
+    const conversations = await ConversationModel.findByUser(user.id);
     res.json({ success: true, data: { conversations, total: conversations.length } });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to get conversations' });
@@ -233,7 +233,7 @@ async function getConversation(req, res) {
     const user = await UserModel.findById(userId);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
     const fullUser = await UserModel.findByEmail(user.email);
-    const conversation = await ConversationModel.findById(id, fullUser.github_id);
+    const conversation = await ConversationModel.findById(id, user.id);
     if (!conversation) return res.status(404).json({ success: false, message: 'Conversation not found' });
     const messages = await ConversationModel.getMessages(id);
     res.json({ success: true, data: { conversation, messages, total_messages: messages.length } });
@@ -249,7 +249,7 @@ async function deleteConversation(req, res) {
     const user = await UserModel.findById(userId);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
     const fullUser = await UserModel.findByEmail(user.email);
-    await ConversationModel.delete(id, fullUser.github_id);
+    await ConversationModel.delete(id, user.id);
     res.json({ success: true, message: 'Conversation deleted successfully' });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to delete conversation' });

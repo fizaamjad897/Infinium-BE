@@ -6,7 +6,7 @@ class BranchIndexModel {
     const { data: branchIndex, error } = await supabaseAdmin
       .from('branch_indexes')
       .insert([{
-        user_github_id: data.user_github_id,
+        user_id: data.user_id,
         repo_name: data.repo_name,
         repo_url: data.repo_url,
         full_name: data.full_name,
@@ -23,30 +23,30 @@ class BranchIndexModel {
     return branchIndex;
   }
 
-  static async findByRepoName(repoName, userGithubId) {
+  static async findByRepoName(repoName, userId) {
     const { data, error } = await supabaseAdmin
       .from('branch_indexes')
       .select('*')
       .eq('repo_name', repoName)
-      .eq('user_github_id', userGithubId)
+      .eq('user_id', userId)
       .maybeSingle();
     
     if (error) return null;
     return data;
   }
 
-  static async findByUser(userGithubId) {
+  static async findByUser(userId) {
     const { data, error } = await supabaseAdmin
       .from('branch_indexes')
       .select('*')
-      .eq('user_github_id', userGithubId)
+      .eq('user_id', userId)
       .order('created_at', { ascending: false });
     
     if (error) return [];
     return data;
   }
 
-  static async updateStatus(repoName, userGithubId, status, stats = {}) {
+  static async updateStatus(repoName, userId, status, stats = {}) {
     const updateData = {
       status: status,
       updated_at: new Date().toISOString()
@@ -67,17 +67,17 @@ class BranchIndexModel {
       .from('branch_indexes')
       .update(updateData)
       .eq('repo_name', repoName)
-      .eq('user_github_id', userGithubId);
+      .eq('user_id', userId);
     
     if (error) console.error('Update branch index error:', error);
   }
 
-  static async delete(repoName, userGithubId) {
+  static async delete(repoName, userId) {
     const { error } = await supabaseAdmin
       .from('branch_indexes')
       .delete()
       .eq('repo_name', repoName)
-      .eq('user_github_id', userGithubId);
+      .eq('user_id', userId);
     
     if (error) return false;
     return true;

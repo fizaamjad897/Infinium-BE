@@ -30,7 +30,7 @@ async function startBranchIngestion(req, res) {
         const fullUser = await UserModel.findByEmail(user.email);
 
         // Check if already indexing
-        const existing = await BranchIndexModel.findByRepoName(repo_name, fullUser.github_id);
+        const existing = await BranchIndexModel.findByRepoName(repo_name, user.id);
         if (existing && existing.status === 'completed') {
             return res.status(409).json({
                 success: false,
@@ -68,7 +68,7 @@ async function startBranchIngestion(req, res) {
         let branchIndex = existing;
         if (!existing) {
             branchIndex = await BranchIndexModel.create({
-                user_github_id: fullUser.github_id,
+                user_id: user.id,
                 repo_name: repo_name,
                 repo_url: repo_url,
                 full_name: fullName,
@@ -77,7 +77,7 @@ async function startBranchIngestion(req, res) {
                 stars: stars
             });
         } else {
-            await BranchIndexModel.updateStatus(repo_name, fullUser.github_id, 'pending');
+            await BranchIndexModel.updateStatus(repo_name, user.id, 'pending');
         }
 
         // Call Python agent
@@ -89,10 +89,7 @@ async function startBranchIngestion(req, res) {
         );
 
         // Update status
-        await BranchIndexModel.updateStatus(repo_name, fullUser.github_id, 'indexing');
-
-        // Start polling
-        startBranchPolling(repo_name, fullUser.github_id);
+        await BranchIndexModel.updateStatus(repo_name, user.id, 'indexing');
 
         res.json({
             success: true,
@@ -122,15 +119,15 @@ async function getBranchIngestionStatus(req, res) {
         const { repoName } = req.params;
         const userId = req.userId;
 
-        const fullUser = await UserModel.findById(userId);
-        if (!fullUser) {
+        const user = await UserModel.findById(userId);
+        if (!user) {
             return res.status(404).json({
                 success: false,
                 message: 'User not found'
             });
         }
-        const branchIndex = await BranchIndexModel.findByRepoName(repoName, fullUser.github_id);
 
+        const branchIndex = await BranchIndexModel.findByRepoName(repoName, user.id);
         if (!branchIndex) {
             return res.status(404).json({
                 success: false,
@@ -138,24 +135,42 @@ async function getBranchIngestionStatus(req, res) {
             });
         }
 
-        let pythonStatus = null;
+        let realTimeProgress = null;
+
         if (branchIndex.status === 'indexing') {
-            pythonStatus = await PythonAgentService.getBranchIngestionStatus(repoName);
-            
-            if (pythonStatus.status === 'completed' || pythonStatus.status === 'complete') {
-                await BranchIndexModel.updateStatus(repoName, fullUser.github_id, 'completed', {
-                    chunks_count: pythonStatus.chunks_stored || 0,
-                    files_count: pythonStatus.files_processed || 0,
-                    commits_count: pythonStatus.commits_processed || 0,
-                    branches_count: pythonStatus.branches_indexed?.length || 0,
-                    branches_list: pythonStatus.branches_indexed || []
-                });
-                branchIndex.status = 'completed';
-            } else if (pythonStatus.status === 'error') {
-                await BranchIndexModel.updateStatus(repoName, fullUser.github_id, 'failed', {
-                    error_message: pythonStatus.error || 'Unknown error'
-                });
-                branchIndex.status = 'failed';
+            try {
+                // Call Python's branch status endpoint
+                const pythonStatus = await PythonAgentService.getBranchIngestionStatus(repoName);
+
+                if (pythonStatus && pythonStatus.status !== 'unknown') {
+                    realTimeProgress = {
+                        status: pythonStatus.status,
+                        step: pythonStatus.step || 'processing',
+                        percent_complete: pythonStatus.percent_complete || 0,
+                        elapsed_seconds: pythonStatus.elapsed_seconds || 0,
+                        eta_seconds: pythonStatus.eta_seconds || 0,
+                        branches_processed: pythonStatus.branches_processed || 0,
+                        branches_total: pythonStatus.branches_total || 0
+                    };
+
+                    if (pythonStatus.status === 'completed' || pythonStatus.status === 'complete') {
+                        await BranchIndexModel.updateStatus(repoName, user.id, 'completed', {
+                            chunks_count: pythonStatus.chunks_stored || 0,
+                            files_count: pythonStatus.files_processed || 0,
+                            commits_count: pythonStatus.commits_processed || 0,
+                            branches_count: pythonStatus.branches_indexed?.length || 0,
+                            branches_list: pythonStatus.branches_indexed || []
+                        });
+                        branchIndex.status = 'completed';
+                    } else if (pythonStatus.status === 'error') {
+                        await BranchIndexModel.updateStatus(repoName, user.id, 'failed', {
+                            error_message: pythonStatus.error || 'Unknown error'
+                        });
+                        branchIndex.status = 'failed';
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to fetch Python branch status:', error.message);
             }
         }
 
@@ -170,7 +185,8 @@ async function getBranchIngestionStatus(req, res) {
                 files_count: branchIndex.files_count,
                 commits_count: branchIndex.commits_count,
                 indexed_at: branchIndex.indexed_at,
-                error_message: branchIndex.error_message
+                error_message: branchIndex.error_message,
+                progress: realTimeProgress
             }
         });
 
@@ -183,45 +199,6 @@ async function getBranchIngestionStatus(req, res) {
     }
 }
 
-/**
- * Background polling for branch ingestion
- */
-async function startBranchPolling(repoName, userGithubId) {
-    let attempts = 0;
-    const maxAttempts = 240;
-    
-    const pollInterval = setInterval(async () => {
-        attempts++;
-        
-        try {
-            const pythonStatus = await PythonAgentService.getBranchIngestionStatus(repoName);
-            
-            if (pythonStatus.status === 'completed' || pythonStatus.status === 'complete') {
-                await BranchIndexModel.updateStatus(repoName, userGithubId, 'completed', {
-                    chunks_count: pythonStatus.chunks_stored || 0,
-                    files_count: pythonStatus.files_processed || 0,
-                    commits_count: pythonStatus.commits_processed || 0,
-                    branches_count: pythonStatus.branches_indexed?.length || 0,
-                    branches_list: pythonStatus.branches_indexed || []
-                });
-                clearInterval(pollInterval);
-                console.log(`✅ Branch ingestion completed for ${repoName}`);
-            } else if (pythonStatus.status === 'error') {
-                await BranchIndexModel.updateStatus(repoName, userGithubId, 'failed', {
-                    error_message: pythonStatus.error || 'Unknown error'
-                });
-                clearInterval(pollInterval);
-                console.log(`❌ Branch ingestion failed for ${repoName}`);
-            } else if (attempts >= maxAttempts) {
-                clearInterval(pollInterval);
-                console.log(`⏰ Branch ingestion timeout for ${repoName}`);
-            }
-        } catch (error) {
-            console.error(`Polling error for ${repoName}:`, error.message);
-            if (attempts >= maxAttempts) clearInterval(pollInterval);
-        }
-    }, 5000);
-}
 
 module.exports = {
     startBranchIngestion,
