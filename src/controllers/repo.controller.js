@@ -23,57 +23,126 @@ async function getUserRepos(req, res) {
     const fullUser = await UserModel.findByEmail(user.email);
     const githubToken = fullUser?.github_access_token;
     
-    if (!githubToken) {
-      return res.status(401).json({
-        success: false,
-        message: 'GitHub token not found. Please re-authenticate with GitHub.'
+    // ========== CASE 1: GitHub User (has token) ==========
+    if (githubToken) {
+      // Fetch repos from GitHub API
+      const githubRepos = await GitHubService.getUserRepos(githubToken);
+      
+      // Get standard indexed repos
+      const indexedRepos = await RepositoryModel.findByOwner(user.id);
+      
+      // Get multi-branch indexed repos (Deep Index)
+      const BranchIndexModel = require('../models/branchIndex.model');
+      const branchIndices = await BranchIndexModel.findByUser(user.id);
+      
+      const indexedRepoNames = new Set([
+        ...indexedRepos.map(r => r.repo_name),
+        ...branchIndices.map(r => r.repo_name)
+      ]);
+
+      // Merge data: add indexing status to each GitHub repo
+      const reposWithStatus = githubRepos.map(repo => {
+        const indexed = indexedRepoNames.has(repo.name);
+        
+        // Prefer branch index data if it exists and is completed/indexing
+        const branchData = branchIndices.find(r => r.repo_name === repo.name);
+        const standardData = indexedRepos.find(r => r.repo_name === repo.name);
+        
+        const bestData = (branchData && branchData.status !== 'failed') ? branchData : standardData;
+        
+        return {
+          ...repo,
+          is_indexed: indexed || (branchData?.status === 'completed'),
+          indexing_status: bestData?.status || null,
+          indexed_at: bestData?.indexed_at || null,
+          chunks_count: bestData?.chunks_count || 0,
+          has_branch_index: branchData?.status === 'completed',
+          indexed_branches: branchData?.branches_list || (standardData?.default_branch ? [standardData.default_branch] : [])
+        };
+      });
+
+      return res.json({
+        success: true,
+        data: {
+          repositories: reposWithStatus,
+          total: reposWithStatus.length,
+          indexed_count: indexedRepoNames.size
+        }
       });
     }
-
-    // Fetch repos from GitHub API
-    const githubRepos = await GitHubService.getUserRepos(githubToken);
     
-    // Get standard indexed repos
-    const indexedRepos = await RepositoryModel.findByOwner(fullUser.github_id);
-    
-    // Get multi-branch indexed repos (Deep Index)
+    // ========== CASE 2: Email User (no GitHub token) ==========
+    // Only return manually indexed repositories
+    const indexedRepos = await RepositoryModel.findByOwner(user.id);
     const BranchIndexModel = require('../models/branchIndex.model');
-    const branchIndices = await BranchIndexModel.findByUser(fullUser.github_id);
+    const branchIndices = await BranchIndexModel.findByUser(user.id);
     
-    const indexedRepoNames = new Set([
-      ...indexedRepos.map(r => r.repo_name),
-      ...branchIndices.map(r => r.repo_name)
-    ]);
+    // Convert to same format as GitHub repos for consistent frontend handling
+    const manualRepos = indexedRepos.map(repo => ({
+      id: repo.id,
+      name: repo.repo_name,
+      full_name: repo.full_name || repo.repo_name,
+      private: repo.is_private || false,
+      html_url: repo.repo_url || `https://github.com/${repo.full_name}`,
+      clone_url: repo.repo_url,
+      description: repo.description || "Manually indexed repository",
+      language: repo.language,
+      stars: repo.stars || 0,
+      forks: 0,
+      default_branch: repo.default_branch || 'main',
+      updated_at: repo.updated_at,
+      size: 0,
+      is_indexed: true,
+      indexing_status: repo.status,
+      indexed_at: repo.indexed_at,
+      chunks_count: repo.chunks_count || 0,
+      has_branch_index: false,
+      indexed_branches: [repo.default_branch || 'main']
+    }));
 
-    // Merge data: add indexing status to each GitHub repo
-    const reposWithStatus = githubRepos.map(repo => {
-      const indexed = indexedRepoNames.has(repo.name);
-      
-      // Prefer branch index data if it exists and is completed/indexing
-      const branchData = branchIndices.find(r => r.repo_name === repo.name);
-      const standardData = indexedRepos.find(r => r.repo_name === repo.name);
-      
-      const bestData = (branchData && branchData.status !== 'failed') ? branchData : standardData;
-      
-      return {
-        ...repo,
-        is_indexed: indexed || (branchData?.status === 'completed'),
-        indexing_status: bestData?.status || null,
-        indexed_at: bestData?.indexed_at || null,
-        chunks_count: bestData?.chunks_count || 0,
-        has_branch_index: branchData?.status === 'completed',
-        indexed_branches: branchData?.branches_list || (standardData?.default_branch ? [standardData.default_branch] : [])
-      };
+    // Add branch-indexed repos for email users
+    const branchRepos = branchIndices.map(br => ({
+      id: br.id,
+      name: br.repo_name,
+      full_name: br.full_name || br.repo_name,
+      private: br.private || false,
+      html_url: br.repo_url || `https://github.com/${br.full_name}`,
+      clone_url: br.repo_url,
+      description: br.description || "Multi-branch indexed repository",
+      language: br.language,
+      stars: br.stars || 0,
+      forks: 0,
+      default_branch: br.default_branch || (br.branches_list?.[0]) || 'main',
+      updated_at: br.updated_at,
+      size: 0,
+      is_indexed: true,
+      indexing_status: br.status,
+      indexed_at: br.indexed_at,
+      chunks_count: br.chunks_count || 0,
+      has_branch_index: true,
+      indexed_branches: br.branches_list || []
+    }));
+
+    // Merge both types (standard and branch-indexed)
+    const allRepos = [...manualRepos, ...branchRepos];
+    
+    // Deduplicate by repo_name (in case same repo has both)
+    const uniqueRepos = new Map();
+    allRepos.forEach(repo => {
+      if (!uniqueRepos.has(repo.name) || (repo.has_branch_index && !uniqueRepos.get(repo.name).has_branch_index)) {
+        uniqueRepos.set(repo.name, repo);
+      }
     });
 
     res.json({
       success: true,
       data: {
-        repositories: reposWithStatus,
-        total: reposWithStatus.length,
-        indexed_count: indexedRepoNames.size
+        repositories: Array.from(uniqueRepos.values()),
+        total: uniqueRepos.size,
+        indexed_count: uniqueRepos.size
       }
     });
+    
   } catch (error) {
     console.error('Get user repos error:', error);
     res.status(500).json({
@@ -100,11 +169,11 @@ async function getIndexedRepos(req, res) {
     }
 
     const fullUser = await UserModel.findByEmail(user.email);
-    const standardRepos = await RepositoryModel.findByOwner(fullUser.github_id);
+    const standardRepos = await RepositoryModel.findByOwner(user.id);
     
     // Merge with branch indices
     const BranchIndexModel = require('../models/branchIndex.model');
-    const branchIndices = await BranchIndexModel.findByUser(fullUser.github_id);
+    const branchIndices = await BranchIndexModel.findByUser(user.id);
     
     // Create a map by repo name to deduplicate, favoring branch indices
     const mergedMap = new Map();
@@ -185,7 +254,7 @@ async function getRepoStatus(req, res) {
     }
 
     const fullUser = await UserModel.findByEmail(user.email);
-    const repo = await RepositoryModel.findByRepoName(repoName, fullUser.github_id);
+    const repo = await RepositoryModel.findByRepoName(repoName, user.id);
 
     if (!repo) {
       return res.status(404).json({
@@ -236,8 +305,8 @@ async function deleteRepo(req, res) {
     }
 
     // 2. Delete from both standard and branch indices in our DB
-    await RepositoryModel.delete(repoName, fullUser.github_id);
-    await BranchIndexModel.delete(repoName, fullUser.github_id);
+    await RepositoryModel.delete(repoName, user.id);
+    await BranchIndexModel.delete(repoName, user.id);
 
     res.json({
       success: true,

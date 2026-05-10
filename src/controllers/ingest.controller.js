@@ -32,7 +32,7 @@ async function startIngestion(req, res) {
         const fullUser = await UserModel.findByEmail(user.email);
 
         // Check if repo already indexed
-        const existingRepo = await RepositoryModel.findByRepoName(repo_name, fullUser.github_id);
+        const existingRepo = await RepositoryModel.findByRepoName(repo_name, user.id);
         if (existingRepo && existingRepo.status === 'completed') {
             return res.status(409).json({
                 success: false,
@@ -85,7 +85,7 @@ async function startIngestion(req, res) {
                 repo_name: repo_name,
                 repo_url: repo_url,
                 full_name: fullName,
-                owner_github_id: fullUser.github_id,
+                user_id: user.id,
                 status: 'pending',
                 is_private: isPrivate,
                 default_branch: defaultBranch,
@@ -94,7 +94,7 @@ async function startIngestion(req, res) {
             });
         } else {
             // Update status to pending for re-indexing
-            await RepositoryModel.updateStatus(repo_name, fullUser.github_id, 'pending');
+            await RepositoryModel.updateStatus(repo_name, user.id, 'pending');
         }
 
         // Call Python agent to start ingestion
@@ -106,10 +106,8 @@ async function startIngestion(req, res) {
         );
 
         // Update status to indexing
-        await RepositoryModel.updateStatus(repo_name, fullUser.github_id, 'indexing');
+        await RepositoryModel.updateStatus(repo_name, user.id, 'indexing');
 
-        // Start background polling to sync status
-        startStatusPolling(repo_name, fullUser.github_id);
 
         res.json({
             success: true,
@@ -130,6 +128,7 @@ async function startIngestion(req, res) {
     }
 }
 
+
 /**
  * Get ingestion status
  * GET /api/ingest/:repoName/status
@@ -147,10 +146,8 @@ async function getIngestionStatus(req, res) {
             });
         }
 
-        const fullUser = await UserModel.findByEmail(user.email);
-
         // Get from local database
-        const repo = await RepositoryModel.findByRepoName(repoName, fullUser.github_id);
+        const repo = await RepositoryModel.findByRepoName(repoName, user.id);
         if (!repo) {
             return res.status(404).json({
                 success: false,
@@ -158,29 +155,58 @@ async function getIngestionStatus(req, res) {
             });
         }
 
-        // If still indexing, check with Python agent for real-time status
+        // If still indexing, fetch REAL-TIME status from Python agent
         let pythonStatus = null;
+        let realTimeProgress = null;
+
         if (repo.status === 'indexing') {
-            pythonStatus = await PythonAgentService.getIngestionStatus(repoName);
+            try {
+                // Call Python's status endpoint
+                pythonStatus = await PythonAgentService.getIngestionStatus(repoName);
 
-            // Sync status if Python shows completed.
-            // Python emits 'completed' (with the d). Accept 'complete' too for safety.
-            if (pythonStatus.status === 'completed' || pythonStatus.status === 'complete') {
-                await RepositoryModel.updateStatus(repoName, fullUser.github_id, 'completed', {
-                    chunks_count: pythonStatus.chunks_stored || 0,
-                    files_count: pythonStatus.files_processed || 0,
-                    commits_count: pythonStatus.commits_processed || 0
+                // ← ADD THIS CONSOLE LOG
+                console.log(`📊 [${repoName}] Real-time progress:`, {
+                    status: pythonStatus.status,
+                    step: pythonStatus.step,
+                    percent: pythonStatus.percent_complete,
+                    elapsed: pythonStatus.elapsed_seconds,
+                    eta: pythonStatus.eta_seconds,
+                    chunks: `${pythonStatus.chunks_processed || 0}/${pythonStatus.chunks_total || 0}`
                 });
 
-                repo.status = 'completed';
-                repo.chunks_count = pythonStatus.chunks_stored || 0;
-                repo.files_count = pythonStatus.files_processed || 0;
-                repo.commits_count = pythonStatus.commits_processed || 0;
-            } else if (pythonStatus.status === 'error') {
-                await RepositoryModel.updateStatus(repoName, fullUser.github_id, 'failed', {
-                    error_message: pythonStatus.error || 'Unknown error'
-                });
-                repo.status = 'failed';
+                if (pythonStatus && pythonStatus.status !== 'unknown') {
+                    // Build real-time progress object from Python data
+                    realTimeProgress = {
+                        status: pythonStatus.status,
+                        step: pythonStatus.step || 'processing',
+                        percent_complete: pythonStatus.percent_complete || 0,
+                        elapsed_seconds: pythonStatus.elapsed_seconds || 0,
+                        eta_seconds: pythonStatus.eta_seconds || 0,
+                        chunks_processed: pythonStatus.chunks_processed || 0,
+                        chunks_total: pythonStatus.chunks_total || 0,
+                        files_processed: pythonStatus.files_processed || 0,
+                        commits_processed: pythonStatus.commits_processed || 0
+                    };
+
+                    // Sync to database if completed
+                    if (pythonStatus.status === 'completed' || pythonStatus.status === 'complete') {
+                        await RepositoryModel.updateStatus(repoName, user.id, 'completed', {
+                            chunks_count: pythonStatus.chunks_stored || 0,
+                            files_count: pythonStatus.files_processed || 0,
+                            commits_count: pythonStatus.commits_processed || 0
+                        });
+                        repo.status = 'completed';
+                        repo.chunks_count = pythonStatus.chunks_stored || 0;
+                    } else if (pythonStatus.status === 'error') {
+                        await RepositoryModel.updateStatus(repoName, user.id, 'failed', {
+                            error_message: pythonStatus.error || 'Unknown error'
+                        });
+                        repo.status = 'failed';
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to fetch Python status:', error.message);
+                // Don't fail - just return DB status
             }
         }
 
@@ -194,7 +220,8 @@ async function getIngestionStatus(req, res) {
                 commits_count: repo.commits_count,
                 indexed_at: repo.indexed_at,
                 error_message: repo.error_message,
-                python_status: pythonStatus // For debugging
+                // Include real-time progress if available
+                progress: realTimeProgress
             }
         });
 
@@ -207,45 +234,6 @@ async function getIngestionStatus(req, res) {
     }
 }
 
-/**
- * Background polling to sync status
- */
-async function startStatusPolling(repoName, ownerGithubId) {
-    const maxAttempts = 240; // 20 minutes (poll every 5 seconds)
-    let attempts = 0;
-
-    const pollInterval = setInterval(async () => {
-        attempts++;
-
-        try {
-            const pythonStatus = await PythonAgentService.getIngestionStatus(repoName);
-
-            if (pythonStatus.status === 'completed' || pythonStatus.status === 'complete') {
-                await RepositoryModel.updateStatus(repoName, ownerGithubId, 'completed', {
-                    chunks_count: pythonStatus.chunks_stored || 0,
-                    files_count: pythonStatus.files_processed || 0,
-                    commits_count: pythonStatus.commits_processed || 0
-                });
-                clearInterval(pollInterval);
-                console.log(`✅ Ingestion completed for ${repoName}`);
-            } else if (pythonStatus.status === 'error') {
-                await RepositoryModel.updateStatus(repoName, ownerGithubId, 'failed', {
-                    error_message: pythonStatus.error || 'Unknown error'
-                });
-                clearInterval(pollInterval);
-                console.log(`❌ Ingestion failed for ${repoName}`);
-            } else if (attempts >= maxAttempts) {
-                clearInterval(pollInterval);
-                console.log(`⏰ Ingestion timeout for ${repoName}`);
-            }
-        } catch (error) {
-            console.error(`Polling error for ${repoName}:`, error.message);
-            if (attempts >= maxAttempts) {
-                clearInterval(pollInterval);
-            }
-        }
-    }, 5000); // Poll every 5 seconds
-}
 
 module.exports = {
     startIngestion,

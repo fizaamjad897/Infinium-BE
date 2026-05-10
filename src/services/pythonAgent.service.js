@@ -1,6 +1,6 @@
 const axios = require('axios');
 
-const PYTHON_AGENT_URL = process.env.PYTHON_AGENT_URL || 'http://localhost:8000';
+const PYTHON_AGENT_URL = process.env.PYTHON_AGENT_URL;
 
 class PythonAgentService {
 
@@ -74,40 +74,63 @@ class PythonAgentService {
         }
     }
 
-    static async getIngestionStatus(repoName) {
-        try {
-            const response = await axios.get(
-                `${PYTHON_AGENT_URL}/api/repos/${repoName}/status`,
-                { timeout: 10000 }
-            );
-
-            return response.data;
-        } catch (error) {
-            // Transient socket resets / timeouts during heavy ingestion are
-            // expected — the poller retries on the next tick. Don't spam logs.
-            const transient = ['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED', 'EPIPE'];
-            if (!transient.includes(error.code)) {
-                console.error('Get ingestion status error:', error.message);
-            }
-            return {
-                status: 'unknown',
-                error: error.message
-            };
-        }
+   static async getIngestionStatus(repoName) {
+    try {
+        const response = await axios.get(
+            `${PYTHON_AGENT_URL}/api/repos/${repoName}/status`,
+            { timeout: 10000 }
+        );
+        
+        // Return the full response which includes progress data
+        return {
+            status: response.data.status,
+            step: response.data.step,
+            percent_complete: response.data.percent_complete,
+            elapsed_seconds: response.data.elapsed_seconds,
+            eta_seconds: response.data.eta_seconds,
+            chunks_processed: response.data.chunks_processed,
+            chunks_total: response.data.chunks_total,
+            files_processed: response.data.files_processed,
+            commits_processed: response.data.commits_processed,
+            chunks_stored: response.data.chunks_stored,
+            ...response.data
+        };
+    } catch (error) {
+        console.error('Get ingestion status error:', error.message);
+        return {
+            status: 'unknown',
+            error: error.message
+        };
     }
+}
 
     /**
      * Check if Python agent is healthy
      * @returns {Promise<boolean>} - True if healthy
      */
-    static async healthCheck() {
-        try {
-            const response = await axios.get(`${PYTHON_AGENT_URL}/api/health`, { timeout: 3000 });
-            return response.status === 200;
-        } catch (error) {
-            console.error('Python agent health check failed:', error.message);
-            return false;
+    static async healthCheck(retries = 2) {
+        for (let i = 0; i <= retries; i++) {
+            try {
+                const response = await axios.get(`${PYTHON_AGENT_URL}/api/health`, {
+                    timeout: 5000,
+                    validateStatus: false
+                });
+                if (response.status === 200) {
+                    if (i > 0) console.log(`✅ Health check succeeded on retry ${i}`);
+                    return true;
+                }
+            } catch (error) {
+                if (i === retries) {
+                    if (error.code !== 'ECONNREFUSED') {
+                        console.error('Python agent health check failed:', error.message);
+                    }
+                    return false;
+                }
+                // Wait before retry
+                await new Promise(r => setTimeout(r, 1000));
+            }
         }
+        return false;
     }
 
     /**
@@ -238,23 +261,30 @@ class PythonAgentService {
      * @param {string} repoName - Repository name
      * @returns {Promise<Object>} - Status object
      */
-    static async getBranchIngestionStatus(repoName) {
-        try {
-            const response = await axios.get(
-                `${PYTHON_AGENT_URL}/api/repos/${repoName}/status?scope=branches`,
-                { timeout: 10000 }
-            );
-            return response.data;
-        } catch (error) {
-            // ECONNRESET / ETIMEDOUT during heavy ingestion are transient — the
-            // poller will retry on the next tick. Don't spam the log for these.
-            const transient = ['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED', 'EPIPE'];
-            if (!transient.includes(error.code)) {
-                console.error('Get branch ingestion status error:', error.message);
-            }
-            return { status: 'unknown', error: error.message };
-        }
+static async getBranchIngestionStatus(repoName) {
+    try {
+        const response = await axios.get(
+            `${PYTHON_AGENT_URL}/api/repos/${repoName}/status?scope=branches`,
+            { timeout: 10000 }
+        );
+        
+        return {
+            status: response.data.status,
+            step: response.data.step,
+            percent_complete: response.data.percent_complete,
+            elapsed_seconds: response.data.elapsed_seconds,
+            eta_seconds: response.data.eta_seconds,
+            branches_processed: response.data.branches_processed,
+            branches_total: response.data.branches_total,
+            chunks_stored: response.data.chunks_stored,
+            branches_indexed: response.data.branches_indexed,
+            ...response.data
+        };
+    } catch (error) {
+        console.error('Get branch ingestion status error:', error.message);
+        return { status: 'unknown', error: error.message };
     }
+}
 
     /**
  * Ask a question across multiple or all repositories

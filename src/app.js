@@ -14,6 +14,8 @@ const dashboardRoutes = require('./routes/dashboard.routes');
 const branchIngestRoutes = require('./routes/branchIngest.routes');
 const codeRoutes = require('./routes/code.routes');
 const feedbackRoutes = require('./routes/feedback.routes');
+const pdfRoutes = require('./routes/pdf.routes');
+const diagramRoutes = require('./routes/diagram.routes');
 
 const app = express();
 
@@ -32,9 +34,25 @@ app.use(limiter);
 // Security middleware
 app.use(helmet());
 
-// CORS configuration
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+  : ['http://localhost:3000'];
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: (origin, callback) => {
+    // Allow requests without origin (Postman/mobile apps)
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    console.log("Blocked Origin:", origin);
+
+    return callback(new Error(`CORS blocked: ${origin}`));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -67,6 +85,9 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/branch-ingest', branchIngestRoutes);
 app.use('/api/code', codeRoutes);
 app.use('/api/feedback', feedbackRoutes);
+app.use('/api/pdf', pdfRoutes);
+app.use('/api/diagram', diagramRoutes);
+
 
 // 404 handler for undefined routes
 app.use((req, res) => {

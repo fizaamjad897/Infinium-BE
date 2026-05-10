@@ -1,15 +1,7 @@
 const { supabaseAdmin } = require('../config/supabase');
 
-/**
- * Repository Model - Handles all database operations for repositories table
- */
 class RepositoryModel {
 
-  /**
-   * Create a new repository record
-   * @param {Object} repoData - Repository data
-   * @returns {Promise<Object>} - Created repository
-   */
   static async create(repoData) {
     const { data, error } = await supabaseAdmin
       .from('repositories')
@@ -17,7 +9,7 @@ class RepositoryModel {
         repo_name: repoData.repo_name,
         repo_url: repoData.repo_url,
         full_name: repoData.full_name,
-        owner_github_id: repoData.owner_github_id,
+        user_id: repoData.user_id,  // ← ONLY user_id, no owner_github_id needed
         status: 'pending',
         is_private: repoData.is_private || false,
         default_branch: repoData.default_branch || 'main',
@@ -31,18 +23,12 @@ class RepositoryModel {
     return data;
   }
 
-  /**
-   * Find repository by name and owner
-   * @param {string} repoName - Repository name
-   * @param {number} ownerGithubId - Owner's GitHub ID
-   * @returns {Promise<Object|null>} - Repository or null
-   */
-  static async findByRepoName(repoName, ownerGithubId) {
+  static async findByRepoName(repoName, userId) {
     const { data, error } = await supabaseAdmin
       .from('repositories')
       .select('*')
       .eq('repo_name', repoName)
-      .eq('owner_github_id', ownerGithubId)
+      .eq('user_id', userId)
       .maybeSingle();
 
     if (error) {
@@ -51,16 +37,12 @@ class RepositoryModel {
     }
     return data;
   }
-  /**
-   * Get all repositories for a user
-   * @param {number} ownerGithubId - Owner's GitHub ID
-   * @returns {Promise<Array>} - List of repositories
-   */
-  static async findByOwner(ownerGithubId) {
+
+  static async findByOwner(userId) {
     const { data, error } = await supabaseAdmin
       .from('repositories')
       .select('*')
-      .eq('owner_github_id', ownerGithubId)
+      .eq('user_id', userId)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -70,15 +52,7 @@ class RepositoryModel {
     return data;
   }
 
-  /**
-   * Update repository status
-   * @param {string} repoName - Repository name
-   * @param {number} ownerGithubId - Owner's GitHub ID
-   * @param {string} status - New status
-   * @param {Object} stats - Optional stats (chunks_count, files_count, etc.)
-   * @returns {Promise<void>}
-   */
-  static async updateStatus(repoName, ownerGithubId, status, stats = {}) {
+  static async updateStatus(repoName, userId, status, stats = {}) {
     const updateData = {
       status: status,
       updated_at: new Date().toISOString()
@@ -97,25 +71,19 @@ class RepositoryModel {
       .from('repositories')
       .update(updateData)
       .eq('repo_name', repoName)
-      .eq('owner_github_id', ownerGithubId);
+      .eq('user_id', userId);
 
     if (error) {
       console.error('Update repository status error:', error);
     }
   }
 
-  /**
-   * Delete a repository
-   * @param {string} repoName - Repository name
-   * @param {number} ownerGithubId - Owner's GitHub ID
-   * @returns {Promise<boolean>} - Success status
-   */
-  static async delete(repoName, ownerGithubId) {
+  static async delete(repoName, userId) {
     const { error } = await supabaseAdmin
       .from('repositories')
       .delete()
       .eq('repo_name', repoName)
-      .eq('owner_github_id', ownerGithubId);
+      .eq('user_id', userId);
 
     if (error) {
       console.error('Delete repository error:', error);
@@ -124,14 +92,8 @@ class RepositoryModel {
     return true;
   }
 
-  /**
-   * Check if repository is already indexed
-   * @param {string} repoName - Repository name
-   * @param {number} ownerGithubId - Owner's GitHub ID
-   * @returns {Promise<boolean>} - True if exists
-   */
-  static async exists(repoName, ownerGithubId) {
-    const repo = await this.findByRepoName(repoName, ownerGithubId);
+  static async exists(repoName, userId) {
+    const repo = await this.findByRepoName(repoName, userId);
     return !!repo;
   }
 }

@@ -37,7 +37,7 @@ async function askQuestion(req, res) {
     let localConversationId = null;
 
     if (conversation_id) {
-      const conversation = await ConversationModel.findById(conversation_id, fullUser.github_id);
+      const conversation = await ConversationModel.findById(conversation_id, user.id);
       if (!conversation) {
         return res.status(404).json({
           success: false,
@@ -52,6 +52,8 @@ async function askQuestion(req, res) {
     if (isStream) {
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
       res.setHeader('Transfer-Encoding', 'chunked');
+      res.setHeader('X-Accel-Buffering', 'no');
+      res.setHeader('Cache-Control', 'no-cache');
 
       const stream = await PythonAgentService.streamQueryRepo(
         repo_name,
@@ -65,8 +67,7 @@ async function askQuestion(req, res) {
 
       stream.on('data', (chunk) => {
         const text = chunk.toString();
-        
-        // If it looks like JSON or we are already buffering
+
         if (text.trim().startsWith('{') || jsonBuffer) {
           jsonBuffer += text;
           try {
@@ -78,7 +79,6 @@ async function askQuestion(req, res) {
               jsonBuffer = "";
             }
           } catch (e) {
-            // Partial JSON, try regex extraction
             const match = jsonBuffer.match(/"answer"\s*:\s*"((?:[^"\\]|\\.)*)"/);
             if (match && match[1]) {
               try {
@@ -88,7 +88,7 @@ async function askQuestion(req, res) {
                   fullAnswer += newPart;
                   res.write(newPart);
                 }
-              } catch(err) {}
+              } catch (err) { }
             }
           }
         } else {
@@ -98,9 +98,15 @@ async function askQuestion(req, res) {
       });
 
       stream.on('end', async () => {
-        // Post-process: Store in DB after stream ends
         if (localConversationId) {
           try {
+            // Check if first message to generate title
+            const existingMessages = await ConversationModel.getMessages(localConversationId);
+            if (existingMessages.length === 0) {
+              const GroqService = require('../services/groq.service');
+              const generatedTitle = await GroqService.generateTitle(query);
+              await ConversationModel.updateTitle(localConversationId, generatedTitle);
+            }
             await ConversationModel.addMessage(localConversationId, 'user', query, null, null, null);
             await ConversationModel.addMessage(localConversationId, 'assistant', fullAnswer, [], 'ollama-streaming', 0);
           } catch (e) {
@@ -130,19 +136,23 @@ async function askQuestion(req, res) {
     // Store in DB
     if (localConversationId) {
       const existingMessages = await ConversationModel.getMessages(localConversationId);
-      if (existingMessages.length === 0) {
+      const isFirstMessage = existingMessages.length === 0;
+
+      // If first message, generate title using Groq (ONLY ONCE)
+      if (isFirstMessage) {
         const GroqService = require('../services/groq.service');
         const generatedTitle = await GroqService.generateTitle(query);
         await ConversationModel.updateTitle(localConversationId, generatedTitle);
+        console.log(`📝 Generated title for conversation ${localConversationId}: ${generatedTitle}`);
       }
 
       await ConversationModel.addMessage(localConversationId, 'user', query, null, null, null);
       await ConversationModel.addMessage(
-        localConversationId, 
-        'assistant', 
-        pythonResponse.answer, 
-        pythonResponse.sources || [], 
-        pythonResponse.model, 
+        localConversationId,
+        'assistant',
+        pythonResponse.answer,
+        pythonResponse.sources || [],
+        pythonResponse.model,
         pythonResponse.tokens_used
       );
     }
@@ -186,7 +196,7 @@ async function startConversation(req, res) {
 
     const fullUser = await UserModel.findByEmail(user.email);
     const pythonConversationId = await PythonAgentService.startConversation(repo_name);
-    const conversation = await ConversationModel.create(fullUser.github_id, repo_name, null);
+    const conversation = await ConversationModel.create(user.id, repo_name, null);
 
     res.json({
       success: true,
@@ -209,7 +219,7 @@ async function getConversations(req, res) {
     const user = await UserModel.findById(userId);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
     const fullUser = await UserModel.findByEmail(user.email);
-    const conversations = await ConversationModel.findByUser(fullUser.github_id);
+    const conversations = await ConversationModel.findByUser(user.id);
     res.json({ success: true, data: { conversations, total: conversations.length } });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to get conversations' });
@@ -223,7 +233,7 @@ async function getConversation(req, res) {
     const user = await UserModel.findById(userId);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
     const fullUser = await UserModel.findByEmail(user.email);
-    const conversation = await ConversationModel.findById(id, fullUser.github_id);
+    const conversation = await ConversationModel.findById(id, user.id);
     if (!conversation) return res.status(404).json({ success: false, message: 'Conversation not found' });
     const messages = await ConversationModel.getMessages(id);
     res.json({ success: true, data: { conversation, messages, total_messages: messages.length } });
@@ -239,7 +249,7 @@ async function deleteConversation(req, res) {
     const user = await UserModel.findById(userId);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
     const fullUser = await UserModel.findByEmail(user.email);
-    await ConversationModel.delete(id, fullUser.github_id);
+    await ConversationModel.delete(id, user.id);
     res.json({ success: true, message: 'Conversation deleted successfully' });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to delete conversation' });
