@@ -55,4 +55,23 @@ async function listFeedback(req, res) {
   }
 }
 
-module.exports = { submitFeedback, feedbackStats, listFeedback };
+/**
+ * GET /api/feedback/metrics?days=30&target_type=&repo_name=
+ */
+async function feedbackMetrics(req, res) {
+  try {
+    const days = Math.min(Math.max(parseInt(req.query.days, 10) || 30, 1), 365);
+    const targetType = req.query.target_type || null;
+    const repoName = req.query.repo_name || null;
+    const data = await PythonAgentService.getFeedbackMetrics({ days, targetType, repoName });
+    if (!data) {
+      return res.status(502).json({ success: false, message: 'Metrics unavailable (agent down?)' });
+    }
+    return res.json({ success: true, data });
+  } catch (error) {
+    console.error('Feedback metrics error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+module.exports = { submitFeedback, feedbackStats, listFeedback, feedbackMetrics };

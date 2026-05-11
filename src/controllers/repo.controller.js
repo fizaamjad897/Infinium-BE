@@ -328,7 +328,8 @@ async function getRepoTree(req, res) {
   try {
     const { repoName } = req.params;
     const includeSymbols = req.query.include_symbols !== 'false';
-    const data = await PythonAgentService.getRepoTree(repoName, includeSymbols);
+    const repoUrl = req.query.repo_url || null;
+    const data = await PythonAgentService.getRepoTree(repoName, includeSymbols, repoUrl);
     return res.json({ success: true, data });
   } catch (error) {
     console.error('Get repo tree error:', error);
@@ -337,16 +338,17 @@ async function getRepoTree(req, res) {
 }
 
 /**
- * GET /api/repos/:repoName/file?path=<rel/path>
+ * GET /api/repos/:repoName/file?path=<rel/path>&repo_url=<optional>
  */
 async function getRepoFile(req, res) {
   try {
     const { repoName } = req.params;
     const { path } = req.query;
+    const repoUrl = req.query.repo_url || null;
     if (!path) {
       return res.status(400).json({ success: false, message: 'path query param is required' });
     }
-    const data = await PythonAgentService.getRepoFile(repoName, path);
+    const data = await PythonAgentService.getRepoFile(repoName, path, repoUrl);
     return res.json({ success: true, data });
   } catch (error) {
     console.error('Get repo file error:', error);
