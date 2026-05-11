@@ -1,5 +1,4 @@
 const PythonAgentService = require('./pythonAgent.service');
-const GroqService = require('./groq.service'); // Your existing Groq service
 
 class DiagramService {
   
@@ -84,45 +83,11 @@ Return ONLY valid Mermaid diagram syntax.`
     diagramCode = diagramCode.replace(/^mermaid\n?/i, '');
     diagramCode = diagramCode.trim();
     
-    // Clean the Mermaid syntax using Groq API
-    const cleanedCode = await this.cleanMermaidWithGroq(diagramCode, diagramType);
-    
     return {
-      diagramCode: cleanedCode,
+      diagramCode,
       sources: response.sources,
       model: response.model
     };
-  }
-
-  /**
-   * Clean/fix Mermaid diagram syntax using Groq API
-   */
-  static async cleanMermaidWithGroq(code, diagramType) {
-    try {
-      const prompt = `Fix the following Mermaid ${diagramType} diagram syntax errors.
-Return ONLY valid Mermaid code, no explanations, no markdown, no backticks.
-
-Current code:
-${code}
-
-Fixed Mermaid code:`;
-
-      // Call Groq API (you already have this service)
-      const response = await GroqService.generateResponse(prompt);
-      
-      let cleanedCode = response;
-      cleanedCode = cleanedCode.replace(/```mermaid\n?/g, '');
-      cleanedCode = cleanedCode.replace(/```\n?/g, '');
-      cleanedCode = cleanedCode.replace(/^mermaid\n?/i, '');
-      cleanedCode = cleanedCode.trim();
-      
-      console.log(`✅ Groq cleaned ${diagramType} diagram syntax`);
-      return cleanedCode;
-      
-    } catch (error) {
-      console.error('❌ Groq cleaning failed, using original code:', error.message);
-      return code;
-    }
   }
 }
 
